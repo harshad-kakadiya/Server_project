@@ -218,7 +218,7 @@ class AppStatusView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         container_name = app.container_name
-        command = f'bash -lc \'docker ps -a --filter "name=^{app_name}$" --format "{{{{.Status}}}}"\' 2>&1'
+        command = f'bash -lc \'docker ps -a --filter "name=^{container_name}$" --format "{{{{.Status}}}}"\' 2>&1'
 
         success, result = run_ssh_command(
             server.host,
