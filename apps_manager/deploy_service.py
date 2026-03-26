@@ -25,9 +25,11 @@ def deploy_repository(app, user):
         f'rm -rf "{remote_path}" && '
         f'git clone "{app.repository_url}" "{remote_path}" && '
         f'cd "{remote_path}" && '
-        f'docker build -t "{image_name}" .'
+        f'docker build -t "{image_name}" . && '
+        f'(docker rm -f "{app_name}" || true) && '
+        f'docker run -d -p {app.port}:{app.port} --name "{app_name}" "{image_name}"'
     )
-    
+
     print("REPO URL:", app.repository_url)
     print("DEPLOY COMMAND:", command)
 
@@ -45,14 +47,14 @@ def deploy_repository(app, user):
 
     if success:
         deployment.status = 'running'
-        deployment.logs = result or "Repository cloned and Docker image built successfully."
+        deployment.logs = result or "Repository deployed successfully."
         deployment.completed_at = datetime.now()
         deployment.save()
 
-        app.status = 'building'
+        app.status = 'running'
         app.save()
 
-        return True, result or "Repository cloned and Docker image built successfully.", deployment
+        return True, result or "Repository deployed successfully.", deployment
 
     deployment.status = 'failed'
     deployment.error_message = result
