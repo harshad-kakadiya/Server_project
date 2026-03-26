@@ -454,6 +454,8 @@ class DeleteAppView(APIView):
         remote_path = f"{remote_base}/{app_name}"
         image_name = f"{app_name}:latest"
 
+        container_name = app.container_name or app_name
+        
         command = (
             f'bash -lc \''
             f'docker rm -f "{container_name}" 2>/dev/null || true; '
