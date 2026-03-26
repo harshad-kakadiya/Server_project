@@ -149,3 +149,279 @@ class DeployAppView(APIView):
             "error": result,
             "deployment_id": deployment.id if deployment else None
         }, status=status.HTTP_400_BAD_REQUEST)
+ 
+class AppLogsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            app = App.objects.get(pk=pk, user=request.user)
+        except App.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "App not found."
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        server = ServerConfig.objects.filter(
+            user=request.user,
+            is_active=True
+        ).order_by('-id').first()
+
+        if not server:
+            return Response({
+                "success": False,
+                "message": "No active server configured."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        command = "bash -lc 'docker logs --tail 100 app 2>&1'"
+
+        success, result = run_ssh_command(
+            server.host,
+            server.ssh_port,
+            server.username,
+            server.password,
+            command
+        )
+
+        return Response({
+            "success": True,
+            "message": "Logs fetched successfully.",
+            "data": {
+                "app_id": app.id,
+                "app_name": app.app_name,
+                "command": command,
+                "logs": result or "No logs found."
+            }
+        }, status=status.HTTP_200_OK)
+        
+class AppStatusView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            app = App.objects.get(pk=pk, user=request.user)
+        except App.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "App not found."
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        server = ServerConfig.objects.filter(
+            user=request.user,
+            is_active=True
+        ).order_by('-id').first()
+
+        if not server:
+            return Response({
+                "success": False,
+                "message": "No active server configured."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        app_name = app.app_name.strip().replace(" ", "-").lower()
+        command = f'bash -lc \'docker ps -a --filter "name=^{app_name}$" --format "{{{{.Status}}}}"\' 2>&1'
+
+        success, result = run_ssh_command(
+            server.host,
+            server.ssh_port,
+            server.username,
+            server.password,
+            command
+        )
+
+        if not success:
+            return Response({
+                "success": False,
+                "message": "Failed to fetch app status.",
+                "error": result
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        docker_status = (result or "").strip()
+
+        if not docker_status:
+            actual_status = "not_found"
+        elif docker_status.lower().startswith("up"):
+            actual_status = "running"
+        elif docker_status.lower().startswith("exited"):
+            actual_status = "stopped"
+        else:
+            actual_status = docker_status
+
+        app.status = actual_status if actual_status in ["running", "stopped", "failed", "pending", "building"] else app.status
+        app.save()
+
+        return Response({
+            "success": True,
+            "message": "App status fetched successfully.",
+            "data": {
+                "app_id": app.id,
+                "app_name": app.app_name,
+                "db_status": app.status,
+                "docker_status": docker_status,
+                "actual_status": actual_status
+            }
+        }, status=status.HTTP_200_OK)
+
+
+class AppStopView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            app = App.objects.get(pk=pk, user=request.user)
+        except App.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "App not found."
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        server = ServerConfig.objects.filter(
+            user=request.user,
+            is_active=True
+        ).order_by('-id').first()
+
+        if not server:
+            return Response({
+                "success": False,
+                "message": "No active server configured."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        app_name = app.app_name.strip().replace(" ", "-").lower()
+        command = f'docker stop "{app_name}" 2>&1'
+
+        success, result = run_ssh_command(
+            server.host,
+            server.ssh_port,
+            server.username,
+            server.password,
+            command
+        )
+
+        if not success:
+            return Response({
+                "success": False,
+                "message": "Failed to stop app.",
+                "error": result
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        app.status = 'stopped'
+        app.save()
+
+        return Response({
+            "success": True,
+            "message": "App stopped successfully.",
+            "data": {
+                "app_id": app.id,
+                "app_name": app.app_name,
+                "output": result
+            }
+        }, status=status.HTTP_200_OK)
+
+
+class AppStartView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            app = App.objects.get(pk=pk, user=request.user)
+        except App.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "App not found."
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        server = ServerConfig.objects.filter(
+            user=request.user,
+            is_active=True
+        ).order_by('-id').first()
+
+        if not server:
+            return Response({
+                "success": False,
+                "message": "No active server configured."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        app_name = app.app_name.strip().replace(" ", "-").lower()
+        command = f'docker start "{app_name}" 2>&1'
+
+        success, result = run_ssh_command(
+            server.host,
+            server.ssh_port,
+            server.username,
+            server.password,
+            command
+        )
+
+        if not success:
+            return Response({
+                "success": False,
+                "message": "Failed to start app.",
+                "error": result
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        app.status = 'running'
+        app.save()
+
+        return Response({
+            "success": True,
+            "message": "App started successfully.",
+            "data": {
+                "app_id": app.id,
+                "app_name": app.app_name,
+                "output": result
+            }
+        }, status=status.HTTP_200_OK)
+
+
+class AppRestartView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            app = App.objects.get(pk=pk, user=request.user)
+        except App.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "App not found."
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        server = ServerConfig.objects.filter(
+            user=request.user,
+            is_active=True
+        ).order_by('-id').first()
+
+        if not server:
+            return Response({
+                "success": False,
+                "message": "No active server configured."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        app_name = app.app_name.strip().replace(" ", "-").lower()
+        command = f'docker restart "{app_name}" 2>&1'
+
+        success, result = run_ssh_command(
+            server.host,
+            server.ssh_port,
+            server.username,
+            server.password,
+            command
+        )
+
+        if not success:
+            return Response({
+                "success": False,
+                "message": "Failed to restart app.",
+                "error": result
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        app.status = 'running'
+        app.save()
+
+        return Response({
+            "success": True,
+            "message": "App restarted successfully.",
+            "data": {
+                "app_id": app.id,
+                "app_name": app.app_name,
+                "output": result
+            }
+        }, status=status.HTTP_200_OK)
