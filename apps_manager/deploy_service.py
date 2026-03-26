@@ -19,7 +19,12 @@ def deploy_repository(app, user):
     remote_base = server.deploy_base_path.rstrip("/")
     remote_path = f"{remote_base}/{app_name}"
     image_name = f"{app_name}:latest"
+    app.container_name = app_name
+    app.save()
 
+    app.container_name = app_name
+    app.save()
+    
     command = (
         f'mkdir -p "{remote_base}" && '
         f'rm -rf "{remote_path}" && '

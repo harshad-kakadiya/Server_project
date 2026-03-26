@@ -217,7 +217,7 @@ class AppStatusView(APIView):
                 "message": "No active server configured."
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        app_name = app.app_name.strip().replace(" ", "-").lower()
+        container_name = app.container_name
         command = f'bash -lc \'docker ps -a --filter "name=^{app_name}$" --format "{{{{.Status}}}}"\' 2>&1'
 
         success, result = run_ssh_command(
@@ -423,5 +423,67 @@ class AppRestartView(APIView):
                 "app_id": app.id,
                 "app_name": app.app_name,
                 "output": result
+            }
+        }, status=status.HTTP_200_OK)
+
+class DeleteAppView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, pk):
+        try:
+            app = App.objects.get(pk=pk, user=request.user)
+        except App.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "App not found."
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        server = ServerConfig.objects.filter(
+            user=request.user,
+            is_active=True
+        ).order_by('-id').first()
+
+        if not server:
+            return Response({
+                "success": False,
+                "message": "No active server configured."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        app_name = app.app_name.strip().replace(" ", "-").lower()
+        remote_base = server.deploy_base_path.rstrip("/")
+        remote_path = f"{remote_base}/{app_name}"
+        image_name = f"{app_name}:latest"
+
+        command = (
+            f'bash -lc \''
+            f'docker rm -f "{container_name}" 2>/dev/null || true; '
+            f'docker rmi -f "{image_name}" 2>/dev/null || true; '
+            f'rm -rf "{remote_path}"'
+            f'\''
+        )
+
+        success, result = run_ssh_command(
+            server.host,
+            server.ssh_port,
+            server.username,
+            server.password,
+            command
+        )
+
+        if not success:
+            return Response({
+                "success": False,
+                "message": "Failed to delete app resources from server.",
+                "error": result
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        app.delete()
+
+        return Response({
+            "success": True,
+            "message": "App deleted successfully.",
+            "data": {
+                "app_name": app_name,
+                "server_output": result or "App resources removed successfully."
             }
         }, status=status.HTTP_200_OK)

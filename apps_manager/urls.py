@@ -10,6 +10,7 @@ from .views import (
     AppStopView,
     AppStartView,
     AppRestartView,
+    DeleteAppView,
 )
 
 urlpatterns = [
@@ -30,4 +31,5 @@ urlpatterns = [
     path('<int:pk>/stop/', AppStopView.as_view(), name='app-stop'),
     path('<int:pk>/start/', AppStartView.as_view(), name='app-start'),
     path('<int:pk>/restart/', AppRestartView.as_view(), name='app-restart'),
+    path('<int:pk>/delete/', DeleteAppView.as_view(), name='app-delete'),
 ]
